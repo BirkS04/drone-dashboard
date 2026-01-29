@@ -4,17 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TelemetryDataPoint } from "@/hooks/use-telemetry-history";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
+import { Switch } from "@/components/ui/switch";
+
 interface AltitudeGraphProps {
   data: TelemetryDataPoint[];
+  active?: boolean;
+  onToggle?: (v: boolean) => void;
 }
 
-export function AltitudeGraph({ data }: AltitudeGraphProps) {
+export function AltitudeGraph({ data, active = true, onToggle }: AltitudeGraphProps) {
   return (
-    <Card className="shadow-[var(--shadow-1)] h-full">
-      <CardHeader className="p-4 pb-2">
+    <Card className={`shadow-[var(--shadow-1)] h-full transition-all duration-300 ${!active && 'opacity-50 grayscale'}`}>
+      <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between space-y-0">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           Altitude (m)
         </CardTitle>
+        {onToggle && (
+            <Switch 
+                checked={active} 
+                onCheckedChange={onToggle} 
+                className="scale-75"
+            />
+        )}
       </CardHeader>
       <CardContent className="p-4 pt-0 h-[200px]">
         <ResponsiveContainer width="100%" height="100%">

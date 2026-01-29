@@ -1,10 +1,8 @@
 "use client";
 
-import { Gauge, ArrowUpDown, Battery } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Gauge, ArrowUpDown, Battery, PlayCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import type { DroneTelemetry } from "@/types/drone";
 
 interface TelemetryPanelProps {
   altitude: number;
@@ -18,63 +16,41 @@ export function TelemetryPanel({
   battery,
 }: TelemetryPanelProps) {
   const batteryColor =
-    battery < 20 ? "text-destructive" : battery < 50 ? "text-chart-5" : "text-chart-2";
-  const batteryBg = battery < 20 ? "bg-destructive" : "";
-
+    battery < 20 ? "text-destructive" : battery < 50 ? "text-chart-5" : "text-emerald-500";
+    
   return (
-    <Card className="shadow-[var(--shadow-1)]">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Gauge className="h-4 w-4" />
-          Telemetrie
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Altitude */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">Höhe</p>
-            <p className="text-2xl font-bold font-mono">{altitude.toFixed(2)} m</p>
-          </div>
-          <Badge variant="outline" className="font-mono">
-            ALT
-          </Badge>
+    <Card className="shadow-[var(--shadow-2)] h-full">
+      <CardContent className="p-4 h-full flex flex-col justify-center gap-3">
+        
+        {/* Row 1: Altitude & VSpeed */}
+        <div className="grid grid-cols-2 gap-4">
+            <div className=" p-2 rounded-md border flex flex-col items-center">
+                <span className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">Altitude</span>
+                <span className="text-2xl font-bold font-mono tracking-tighter">{altitude.toFixed(1)}<span className="text-xs text-muted-foreground ml-1">m</span></span>
+            </div>
+            <div className="p-2 rounded-md border flex flex-col items-center">
+                <span className="text-[10px] uppercase text-muted-foreground tracking-wider mb-1">V. Speed</span>
+                <div className="flex items-center gap-1">
+                    {verticalSpeed > 0.1 && <ArrowUpDown className="h-3 w-3 text-emerald-500" />}
+                    <span className={`text-xl font-bold font-mono tracking-tighter ${Math.abs(verticalSpeed) > 0.5 ? 'text-blue-400' : ''}`}>
+                        {verticalSpeed.toFixed(1)}
+                    </span>
+                </div>
+            </div>
         </div>
 
-        {/* Vertical Speed */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">
-              Vertikalgeschwindigkeit
-            </p>
-            <div className="flex items-center gap-2">
-              <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xl font-bold font-mono">
-                {verticalSpeed > 0 ? "+" : ""}
-                {verticalSpeed.toFixed(2)} m/s
-              </p>
+        {/* Row 2: Battery */}
+        <div className=" p-2 rounded-md border">
+            <div className="flex justify-between items-center mb-1">
+                <div className="flex items-center gap-1">
+                    <Battery className={`h-3 w-3 ${batteryColor}`} />
+                    <span className="text-[10px] uppercase text-muted-foreground">Battery</span>
+                </div>
+                <span className={`text-sm font-bold font-mono ${batteryColor}`}>{battery}%</span>
             </div>
-          </div>
-          <Badge
-            variant={verticalSpeed > 0 ? "default" : verticalSpeed < 0 ? "secondary" : "outline"}
-          >
-            {verticalSpeed > 0 ? "↑" : verticalSpeed < 0 ? "↓" : "—"}
-          </Badge>
+            <Progress value={battery} className="h-1.5" indicatorClassName={battery < 20 ? "bg-destructive" : "bg-emerald-500"} />
         </div>
 
-        {/* Battery */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Battery className={`h-4 w-4 ${batteryColor}`} />
-              <p className="text-sm font-medium text-muted-foreground">Batterie</p>
-            </div>
-            <p className={`text-lg font-bold font-mono ${batteryColor}`}>
-              {battery}%
-            </p>
-          </div>
-          <Progress value={battery} className={`h-2 ${batteryBg}`} />
-        </div>
       </CardContent>
     </Card>
   );

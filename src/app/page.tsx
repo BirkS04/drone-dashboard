@@ -1,18 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Activity } from "lucide-react";
 import { useDrone } from "@/hooks/use-drone";
 import { useTelemetryHistory } from "@/hooks/use-telemetry-history";
-import { MissionHeader, TelemetryPanel, ControlPad } from "@/components/drone";
+import { TelemetryPanel } from "@/components/drone";
+import { CommandCenter } from "@/components/drone/CommandCenter";
+import { Orientation3D } from "@/components/drone/Orientation3D";
 import { MotionGraph } from "@/components/drone/MotionGraph";
 import { AltitudeGraph } from "@/components/drone/AltitudeGraph";
 import { FlightMap } from "@/components/drone/FlightMap";
-import { AttitudeWidget } from "@/components/drone/AttitudeWidget";
-import { SpeedControl } from "@/components/drone/SpeedControl";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
+import { ControlPad } from "@/components/drone/ControlPad";
+import { Card } from "@/components/ui/card";
 
 export default function Home() {
   const {
@@ -28,152 +27,153 @@ export default function Home() {
     land,
     move,
     setMode,
+    setMoveSpeed,
   } = useDrone();
 
-  const { history, current: currentTelem } = useTelemetryHistory(200);
+  const { history, current: currentTelem } = useTelemetryHistory(150);
 
   // Widget Visibility State
-  const [showGraphs, setShowGraphs] = useState(true);
-  const [showMap, setShowMap] = useState(true);
-  const [showAttitude, setShowAttitude] = useState(true);
+  // Graphs are now individually toggleable, but we track their "active" state
+  const [showMotion, setShowMotion] = useState(true);
+  const [showAltitude, setShowAltitude] = useState(true);
+  
+  // These are general toggles from the top bar (which we might simplify now)
+  const [showMap, setShowMap] = useState(true); // Toggles the whole spatial column? Or just map?
+  const [show3D, setShow3D] = useState(true);
+
+  // Speed State for UI - Ensure we initialize effectively
+  const [speedVal, setSpeedVal] = useState(1.0);
 
   const handleRtl = async () => {
     await setMode("RTL");
   };
 
-  // Keyboard Control (WASD + Arrows)
+  const handleSpeedChange = (val: number) => {
+      // Immediate UI update
+      setSpeedVal(val);
+      // Debounced or direct backend call
+      setMoveSpeed(val);
+  };
+    
+  // ... KeyDown logic remains same ...
+  // Keyboard Control (WASD + Arrows + QE)
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isArmed) return;
+    if (["ArrowUp", "ArrowDown", "w", "a", "s", "d", "q", "e", " "].includes(e.key)) e.preventDefault();
 
-    // Prevent scrolling for control keys
-    if (["ArrowUp", "ArrowDown", "w", "a", "s", "d"].includes(e.key)) {
-        e.preventDefault();
-    }
-
-    const speed = 1.0; // Base multiplier, handled by backend param mostly but we send unitary vectors here
+    const s = speedVal; 
+    
+    // NOTE: Keyboard needs continuous press handling for smooth flight. 
+    // Currently, this triggers once per key repeat.
+    // Ideally we track keysPressed set. But for now, simple mapping:
     
     switch (e.key) {
-        case "w": // Forward
-            move(speed, 0, 0);
-            break;
-        case "s": // Backward
-            move(-speed, 0, 0);
-            break;
-        case "a": // Left
-            move(0, speed, 0);
-            break;
-        case "d": // Right
-            move(0, -speed, 0);
-            break;
-        case "ArrowUp": // Up
-            move(0, 0, speed);
-            break;
-        case "ArrowDown": // Down
-            move(0, 0, -speed);
-            break;
-        case "ArrowLeft": // Yaw Left
-            // Yaw not yet implemented in move() interface fully (requires angular z), assume move() does linear only currently
-            // Updating move to support angular would be needed for full control.
-            // For now, let's keep linear.
-            break;
-        case "ArrowRight": // Yaw Right
-            break;
+        case "w": move(s, 0, 0, 0); break; // Fwd
+        case "s": move(-s, 0, 0, 0); break; // Back
+        case "a": move(0, s, 0, 0); break; // Left
+        case "d": move(0, -s, 0, 0); break; // Right
+        case "q": move(0, 0, 0, 0.5); break; // Yaw Left (pos)
+        case "e": move(0, 0, 0, -0.5); break; // Yaw Right (neg)
+        case "ArrowUp": move(0, 0, s, 0); break; // Up
+        case "ArrowDown": move(0, 0, -s, 0); break; // Down
+        case " ": move(0, 0, 0, 0); break; // STOP
     }
-  }, [isArmed, move]);
+  }, [isArmed, move, speedVal]);
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [handleKeyDown]);
 
   return (
-    <main className="min-h-screen bg-background p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto space-y-4">
-        {/* Top Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-                <h1 className="text-3xl font-bold tracking-tight">MISSION CONTROL</h1>
-                <p className="text-muted-foreground text-sm">
-                    ROS 2 Humble / MAVROS Bridge / Connection: {isConnected ? <span className="text-green-500 font-bold">ONLINE</span> : <span className="text-red-500 font-bold">OFFLINE</span>}
-                </p>
-            </div>
+    <main className="min-h-screen bg-background p-4 h-screen flex flex-col overflow-hidden">
+        <div className="flex-1 grid grid-cols-6 grid-rows-5 gap-4 min-h-0">
             
-            {/* Widget Toolbar */}
-            <div className="flex items-center gap-4 bg-muted/40 p-2 rounded-lg border">
-                <div className="flex items-center space-x-2">
-                    <Switch id="show-graphs" checked={showGraphs} onCheckedChange={setShowGraphs} />
-                    <Label htmlFor="show-graphs">Graphs</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <Switch id="show-map" checked={showMap} onCheckedChange={setShowMap} />
-                    <Label htmlFor="show-map">Map</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <Switch id="show-attitude" checked={showAttitude} onCheckedChange={setShowAttitude} />
-                    <Label htmlFor="show-attitude">Attitude</Label>
-                </div>
-            </div>
-        </div>
-
-        <Separator />
-
-        {/* Action Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            <div className="md:col-span-8">
-                <MissionHeader
-                  isArmed={isArmed}
-                  mode={mode}
-                  isConnected={isConnected}
-                  onArm={arm}
-                  onDisarm={disarm}
-                  onTakeoff={() => takeoff(5)}
-                  onLand={land}
-                  onRtl={handleRtl}
-                />
-            </div>
-            <div className="md:col-span-4">
-                 <SpeedControl />
-            </div>
-        </div>
-
-        {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            
-            {/* Left Column: Flight Instruments (4 cols) */}
-            <div className="md:col-span-4 space-y-4">
-                <TelemetryPanel
-                    altitude={altitude}
-                    verticalSpeed={verticalSpeed}
-                    battery={battery}
-                />
-                <ControlPad onMove={move} disabled={!isArmed || !isConnected} />
-                
-                {showAttitude && (
-                    <AttitudeWidget 
-                        roll={currentTelem?.roll ?? 0} 
-                        pitch={currentTelem?.pitch ?? 0} 
+            {/* 1: Header & Telemetry (Col 1-4, Row 1) */}
+            <div className="col-span-4 row-span-1 flex gap-4 min-h-0">
+                 <div className="w-2/3 h-full">
+                    <CommandCenter 
+                        isArmed={isArmed}
+                        isConnected={isConnected}
+                        mode={mode}
+                        moveSpeed={speedVal}
+                        onArm={arm}
+                        onDisarm={disarm}
+                        onLand={land}
+                        onTakeoff={() => takeoff(5)}
+                        onRtl={handleRtl}
+                        onSpeedChange={handleSpeedChange}
+                        showGraphs={showMotion || showAltitude} 
+                        setShowGraphs={(v) => { setShowMotion(v); setShowAltitude(v); }}
+                        showMap={showMap}
+                        setShowMap={setShowMap}
+                        showAttitude={false} 
+                        setShowAttitude={() => {}}
+                        show3D={show3D}
+                        setShow3D={setShow3D}
                     />
-                )}
+                 </div>
+                 <div className="w-1/3 h-full">
+                    <TelemetryPanel 
+                        altitude={altitude}
+                        verticalSpeed={verticalSpeed}
+                        battery={battery}
+                    />
+                 </div>
             </div>
 
-            {/* Middle/Right Column: Visualization (8 cols) */}
-            <div className="md:col-span-8 grid grid-cols-1 gap-4">
-                
-                {/* Upper Row: Map & Altitude */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-[300px]">
-                    {showMap && <FlightMap data={history} current={currentTelem} />}
-                    {showGraphs && <AltitudeGraph data={history} />}
-                </div>
-
-                {/* Lower Row: Motion Graph */}
-                {showGraphs && (
-                    <div className="h-[250px]">
-                        <MotionGraph data={history} />
-                    </div>
-                )}
+            {/* 2: Flight Map (Col 1-2, Row 2-3) */}
+            <div className="col-span-2 row-span-2 col-start-1 row-start-2 min-h-0">
+                <FlightMap data={history} current={currentTelem} />
             </div>
+
+            {/* 3: 3D Orientation (Col 1-2, Row 4-5) */}
+            <div className="col-span-2 row-span-2 col-start-1 row-start-4 min-h-0">
+                <Orientation3D 
+                    roll={currentTelem?.roll ?? 0}
+                    pitch={currentTelem?.pitch ?? 0}
+                    yaw={currentTelem?.yaw ?? 0}
+                />
+            </div>
+
+            {/* 4: Graphs (Col 3-4, Row 2-5) */}
+            <div className="col-span-2 row-span-4 col-start-3 row-start-2 min-h-0 flex flex-col gap-4">
+                 <div className="flex-1 min-h-0">
+                    <MotionGraph 
+                        data={history} 
+                        active={showMotion} 
+                        onToggle={setShowMotion}
+                    />
+                 </div>
+                 <div className="flex-1 min-h-0">
+                    <AltitudeGraph 
+                        data={history} 
+                        active={showAltitude}
+                        onToggle={setShowAltitude}
+                    />
+                 </div>
+            </div>
+
+            {/* 5: Controls (Col 5-6, Row 1-5 [Full Height]) */}
+            <div className="col-span-2 row-span-5 col-start-5 row-start-1 min-h-0 flex flex-col gap-4">
+                 {/* Top Half: Placeholder for Video/Future */}
+                 <div className="flex-1 min-h-0">
+                     <Card className="h-full bg-slate-950/50 flex flex-col items-center justify-center border-dashed relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-grid-white/5 mask-image-linear-to-b" />
+                        <span className="text-muted-foreground text-xs font-mono uppercase tracking-widest z-10">FPV Feed Link Lost</span>
+                        <Activity className="h-8 w-8 text-muted-foreground/20 mt-2 animate-pulse" />
+                     </Card>
+                 </div>
+                 
+                 {/* Bottom Half: Control Pad */}
+                 <div className="h-[400px] shrink-0">
+                     <ControlPad onMove={move} disabled={!isArmed} />
+                 </div>
+            </div>
+
         </div>
-      </div>
     </main>
   );
 }

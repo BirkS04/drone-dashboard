@@ -22,7 +22,7 @@ interface UseDroneReturn {
   disarm: () => Promise<boolean>;
   takeoff: (height?: number) => Promise<boolean>;
   land: () => Promise<boolean>;
-  move: (x: number, y: number, z: number) => void;
+  move: (x: number, y: number, z: number, yaw?: number) => void;
   setMode: (mode: DroneMode) => Promise<boolean>;
   setMoveSpeed: (speed: number) => Promise<boolean>;
 }
@@ -253,27 +253,28 @@ export function useDrone(): UseDroneReturn {
     }
   }, [callService]);
 
-  const move = useCallback((x: number, y: number, z: number): void => {
-    if (!rosRef.current || !roslibRef.current) {
-      console.error("ROS not connected");
-      return;
-    }
+  const move = useCallback(
+    (x: number, y: number, z: number, yaw: number = 0) => {
+      if (!rosRef.current || !roslibRef.current) {
+        console.error("ROS not connected");
+        return;
+      }
 
-    const ROSLIB = roslibRef.current;
-    const moveTopic = new ROSLIB.Topic({
-      ros: rosRef.current,
-      name: "/commander/move_relative",
-      messageType: "geometry_msgs/Twist",
-    });
+      const twist = {
+        linear: { x, y, z },
+        angular: { x: 0, y: 0, z: yaw },
+      };
 
-    const message: TwistMessage = {
-      linear: { x, y, z },
-      angular: { x: 0, y: 0, z: 0 },
-    };
+      const cmdVel = new roslibRef.current.Topic({
+        ros: rosRef.current,
+        name: "/commander/move_relative",
+        messageType: "geometry_msgs/Twist",
+      });
 
-    // roslib publish() accepts object directly
-    moveTopic.publish(message);
-  }, []);
+      cmdVel.publish(twist);
+    },
+    []
+  );
 
   const setMode = useCallback(
     async (newMode: DroneMode): Promise<boolean> => {
