@@ -24,6 +24,7 @@ interface UseDroneReturn {
   land: () => Promise<boolean>;
   move: (x: number, y: number, z: number) => void;
   setMode: (mode: DroneMode) => Promise<boolean>;
+  setMoveSpeed: (speed: number) => Promise<boolean>;
 }
 
 export function useDrone(): UseDroneReturn {
@@ -218,7 +219,7 @@ export function useDrone(): UseDroneReturn {
         // Nutze den Commander Node Service für 5m Takeoff
         if (height === 5) {
           const response = await callService<{ success: boolean }>(
-            "/commander/takeoff_5m",
+            "/commander/takeoff",
             "std_srvs/Trigger"
           );
           return response.success;
@@ -291,6 +292,58 @@ export function useDrone(): UseDroneReturn {
     [callService]
   );
 
+  const setMoveSpeed = useCallback(
+    async (speed: number): Promise<boolean> => {
+      try {
+        // Parameter update calls usually go to /<node_name>/set_parameters
+        // Type: rcl_interfaces/srv/SetParameters
+        // Note: roslib might not handle complex parameter objects easily.
+        // We will assume standard ROS 2 parameter service structure.
+        
+        // Construct Parameter object
+        // We need to send { parameters: [ { name: "move_speed", value: { type: 3, double_value: speed } } ] }
+        // Type 3 is DOUBLE_VALUE in rcl_interfaces/msg/ParameterType
+        
+        if (!rosRef.current || !roslibRef.current) return false;
+        
+        const ROSLIB = roslibRef.current;
+        const paramClient = new ROSLIB.Service({
+            ros: rosRef.current,
+            name: "/commander_node/set_parameters",
+            serviceType: "rcl_interfaces/srv/SetParameters" 
+        });
+
+        const request = {
+            parameters: [
+                {
+                    name: "move_speed",
+                    value: {
+                        type: 3, // ACTION_INTRINSIC_TYPE_DOUBLE
+                        double_value: speed
+                    }
+                }
+            ]
+        };
+
+        return new Promise((resolve) => {
+            paramClient.callService(request, (res: any) => {
+                 // res.results is array of SetParametersResult
+                 if (res && res.results && res.results.length > 0 && res.results[0].successful) {
+                     resolve(true);
+                 } else {
+                     resolve(false);
+                 }
+            }, () => resolve(false));
+        });
+
+      } catch (error) {
+        console.error("Failed to set speed:", error);
+        return false;
+      }
+    },
+    []
+  );
+
   return {
     // State
     isConnected,
@@ -306,5 +359,6 @@ export function useDrone(): UseDroneReturn {
     land,
     move,
     setMode,
+    setMoveSpeed,
   };
 }

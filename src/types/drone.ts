@@ -86,3 +86,26 @@ export interface TwistMessage {
     z: number;
   };
 }
+
+/** Twist Stamped Message */
+export interface MavrosTwist {
+  header: {
+    stamp: {
+      sec: number;
+      nanosec: number;
+    };
+    frame_id: string;
+  };
+  twist: {
+    linear: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    angular: {
+      x: number;
+      y: number;
+      z: number;
+    };
+  };
+}
