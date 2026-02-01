@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Activity } from "lucide-react";
+
 import { useDrone } from "@/hooks/use-drone";
 import { useTelemetryHistory } from "@/hooks/use-telemetry-history";
 import { TelemetryPanel } from "@/components/drone";
@@ -28,6 +28,7 @@ export default function Home() {
     move,
     setMode,
     setMoveSpeed,
+    cameraImage,
   } = useDrone();
 
   const { history, current: currentTelem } = useTelemetryHistory(150);
@@ -159,12 +160,20 @@ export default function Home() {
             {/* 5: Controls (Col 5-6, Row 1-5 [Full Height]) */}
             <div className="col-span-2 row-span-5 col-start-5 row-start-1 min-h-0 flex flex-col gap-4">
                  {/* Top Half: Placeholder for Video/Future */}
-                 <div className="flex-1 min-h-0">
-                     <Card className="h-full bg-slate-950/50 flex flex-col items-center justify-center border-dashed relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-grid-white/5 mask-image-linear-to-b" />
-                        <span className="text-muted-foreground text-xs font-mono uppercase tracking-widest z-10">FPV Feed Link Lost</span>
-                        <Activity className="h-8 w-8 text-muted-foreground/20 mt-2 animate-pulse" />
-                     </Card>
+                <div className="flex-1 min-h-0 relative">
+                     {cameraImage ? (
+                       <img 
+                         src={cameraImage} 
+                         alt="Drone Live Feed" 
+                         className="w-full h-full object-cover rounded-lg"
+                       />
+                     ) : (
+                       <Card className="h-full bg-slate-950/50 flex flex-col items-center justify-center border-dashed">
+                           <span className="text-muted-foreground text-sm">
+                             {isConnected ? "Warte auf Kamera..." : "ROS nicht verbunden"}
+                           </span>
+                       </Card>
+                     )}
                  </div>
                  
                  {/* Bottom Half: Control Pad */}

@@ -80,7 +80,12 @@ export function ControlPad({ onMove, disabled = false }: ControlPadProps) {
   const handleLeftStick = (x: number, y: number) => {
       inputRef.current.yaw = x;
       inputRef.current.z = y;
-      if (!loopRef.current) startLoop();
+      
+      if (x === 0 && y === 0) {
+          checkStop();
+      } else {
+          if (!loopRef.current) startLoop();
+      }
   };
   const handleLeftStop = () => {
       inputRef.current.yaw = 0;
@@ -92,7 +97,12 @@ export function ControlPad({ onMove, disabled = false }: ControlPadProps) {
   const handleRightStick = (x: number, y: number) => {
       inputRef.current.x = x;
       inputRef.current.y = y;
-      if (!loopRef.current) startLoop();
+      
+      if (x === 0 && y === 0) {
+          checkStop();
+      } else {
+          if (!loopRef.current) startLoop();
+      }
   };
   const handleRightStop = () => {
       inputRef.current.x = 0;

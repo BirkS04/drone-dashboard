@@ -6,7 +6,6 @@ import type {
   MavrosState,
   MavrosBattery,
   MavrosLocalPosition,
-  TwistMessage,
 } from "@/types/drone";
 
 const ROS_BRIDGE_URL = "ws://localhost:9090";
@@ -18,6 +17,9 @@ interface UseDroneReturn {
   battery: number;
   altitude: number;
   verticalSpeed: number;
+  // --- NEU: Kamera State ---
+  cameraImage: string | null; 
+  // -------------------------
   arm: () => Promise<boolean>;
   disarm: () => Promise<boolean>;
   takeoff: (height?: number) => Promise<boolean>;
@@ -28,20 +30,20 @@ interface UseDroneReturn {
 }
 
 export function useDrone(): UseDroneReturn {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rosRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const roslibRef = useRef<any>(null);
 
-  // State
   const [isConnected, setIsConnected] = useState(false);
   const [isArmed, setIsArmed] = useState(false);
   const [mode, setModeState] = useState<DroneMode>("UNKNOWN");
   const [battery, setBattery] = useState(0);
   const [altitude, setAltitude] = useState(0);
   const [verticalSpeed, setVerticalSpeed] = useState(0);
+  
+  // --- NEU: State für das Kamerabild (Base64 String) ---
+  const [cameraImage, setCameraImage] = useState<string | null>(null);
+  // ----------------------------------------------------
 
-  // Vorherige Position für Geschwindigkeitsberechnung
   const lastAltitudeRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(Date.now());
 
@@ -59,19 +61,14 @@ export function useDrone(): UseDroneReturn {
     return modeMap[modeString] || "UNKNOWN";
   }, []);
 
-  // ========================
-  // ROS Connection - Dynamic Import
-  // ========================
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let stateTopic: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let batteryTopic: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let poseTopic: any = null;
+    // --- NEU: Kamera Topic Variable ---
+    let cameraTopic: any = null;
 
     const initRos = async () => {
-      // Dynamic import to avoid SSR/Turbopack issues
       const ROSLIB = await import("roslib");
       roslibRef.current = ROSLIB;
 
@@ -103,7 +100,6 @@ export function useDrone(): UseDroneReturn {
         name: "/mavros/state",
         messageType: "mavros_msgs/State",
       });
-
       stateTopic.subscribe((message: MavrosState) => {
         setIsArmed(message.armed);
         setModeState(parseMode(message.mode));
@@ -115,7 +111,6 @@ export function useDrone(): UseDroneReturn {
         name: "/mavros/battery",
         messageType: "sensor_msgs/BatteryState",
       });
-
       batteryTopic.subscribe((message: MavrosBattery) => {
         setBattery(Math.round(message.percentage * 100));
       });
@@ -126,22 +121,34 @@ export function useDrone(): UseDroneReturn {
         name: "/mavros/local_position/pose",
         messageType: "geometry_msgs/PoseStamped",
       });
-
       poseTopic.subscribe((message: MavrosLocalPosition) => {
         const newAltitude = message.pose.position.z;
         const currentTime = Date.now();
-
-        // Berechne Vertikalgeschwindigkeit
         const dt = (currentTime - lastTimeRef.current) / 1000;
         if (dt > 0) {
           const vSpeed = (newAltitude - lastAltitudeRef.current) / dt;
           setVerticalSpeed(Math.round(vSpeed * 100) / 100);
         }
-
         setAltitude(Math.round(newAltitude * 100) / 100);
         lastAltitudeRef.current = newAltitude;
         lastTimeRef.current = currentTime;
       });
+
+      // =====================================================
+      // --- NEU: Kamera Subscription (Vision Proxy Topic) ---
+      // =====================================================
+      cameraTopic = new ROSLIB.Topic({
+        ros,
+        name: "/camera/image_raw/compressed",
+        messageType: "sensor_msgs/CompressedImage",
+      });
+
+      cameraTopic.subscribe((message: any) => {
+        // ROS sendet uint8[] Daten via Bridge als Base64 String
+        // Wir fügen den Data-URI Header für den Browser hinzu
+        setCameraImage(`data:image/jpeg;base64,${message.data}`);
+      });
+      // =====================================================
     };
 
     initRos();
@@ -150,13 +157,13 @@ export function useDrone(): UseDroneReturn {
       stateTopic?.unsubscribe();
       batteryTopic?.unsubscribe();
       poseTopic?.unsubscribe();
+      cameraTopic?.unsubscribe(); // --- NEU: Cleanup ---
       rosRef.current?.close();
     };
   }, [parseMode]);
 
-  // ========================
-  // Service Call Helper
-  // ========================
+  // ... (Die restlichen Funktionen arm, disarm, move etc. bleiben gleich)
+
   const callService = useCallback(
     <T>(serviceName: string, serviceType: string, request: object = {}): Promise<T> => {
       return new Promise((resolve, reject) => {
@@ -164,7 +171,6 @@ export function useDrone(): UseDroneReturn {
           reject(new Error("ROS not connected"));
           return;
         }
-
         const ROSLIB = roslibRef.current;
         const service = new ROSLIB.Service({
           ros: rosRef.current,
@@ -346,14 +352,13 @@ export function useDrone(): UseDroneReturn {
   );
 
   return {
-    // State
     isConnected,
     isArmed,
     mode,
     battery,
     altitude,
     verticalSpeed,
-    // Actions
+    cameraImage, // --- NEU: Zurückgeben des Bild-Strings ---
     arm,
     disarm,
     takeoff,
