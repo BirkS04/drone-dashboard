@@ -27,6 +27,7 @@ interface UseDroneReturn {
   move: (x: number, y: number, z: number, yaw?: number) => void;
   setMode: (mode: DroneMode) => Promise<boolean>;
   setMoveSpeed: (speed: number) => Promise<boolean>;
+  executeMission: (waypoints: { x: number; y: number; z: number }[]) => Promise<boolean>;
 }
 
 export function useDrone(): UseDroneReturn {
@@ -351,6 +352,54 @@ export function useDrone(): UseDroneReturn {
     []
   );
 
+  const executeMission = useCallback(
+    async (waypoints: { x: number; y: number; z: number }[]): Promise<boolean> => {
+      if (!rosRef.current || !roslibRef.current || waypoints.length === 0) {
+        console.error("Cannot start mission: ROS disconnected or no waypoints");
+        return false;
+      }
+
+      const ROSLIB = roslibRef.current;
+
+      // 1. Publish Path
+      const missionTopic = new ROSLIB.Topic({
+        ros: rosRef.current,
+        name: "/commander/mission_path",
+        messageType: "geometry_msgs/PoseArray",
+      });
+
+      const poseArray = {
+        header: {
+          frame_id: "map",
+          stamp: { sec: 0, nsec: 0 }, // Timestamp internally handled
+        },
+        poses: waypoints.map((wp) => ({
+          position: { x: wp.x, y: wp.y, z: wp.z },
+          orientation: { x: 0, y: 0, z: 0, w: 1 }, // Default orientation
+        })),
+      };
+
+      missionTopic.publish(poseArray);
+
+      // Short delay to ensure message is received before starting
+      await new Promise((r) => setTimeout(r, 200));
+
+      // 2. Start Mission Service Call
+      try {
+        const response = await callService<{ success: boolean; message: string }>(
+          "/commander/start_mission",
+          "std_srvs/Trigger"
+        );
+        console.log("Mission Start Response:", response.message);
+        return response.success;
+      } catch (error) {
+        console.error("Failed to start mission:", error);
+        return false;
+      }
+    },
+    [callService]
+  );
+
   return {
     isConnected,
     isArmed,
@@ -358,7 +407,7 @@ export function useDrone(): UseDroneReturn {
     battery,
     altitude,
     verticalSpeed,
-    cameraImage, // --- NEU: Zurückgeben des Bild-Strings ---
+    cameraImage,
     arm,
     disarm,
     takeoff,
@@ -366,5 +415,6 @@ export function useDrone(): UseDroneReturn {
     move,
     setMode,
     setMoveSpeed,
+    executeMission,
   };
 }
