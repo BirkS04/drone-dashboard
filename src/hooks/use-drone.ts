@@ -28,6 +28,9 @@ interface UseDroneReturn {
   setMode: (mode: DroneMode) => Promise<boolean>;
   setMoveSpeed: (speed: number) => Promise<boolean>;
   executeMission: (waypoints: { x: number; y: number; z: number }[]) => Promise<boolean>;
+  setMissionStrategy: (strategy: "CASUAL" | "FACE_TARGET" | "INSPECT" | "ORBIT") => Promise<boolean>;
+  setInspectROI: (x: number, y: number, z: number) => Promise<boolean>;
+  setOrbitRadius: (radius: number) => Promise<boolean>;
 }
 
 export function useDrone(): UseDroneReturn {
@@ -400,6 +403,134 @@ export function useDrone(): UseDroneReturn {
     [callService]
   );
 
+  const setMissionStrategy = useCallback(
+    async (strategy: "CASUAL" | "FACE_TARGET" | "INSPECT" | "ORBIT"): Promise<boolean> => {
+      try {
+        if (!rosRef.current || !roslibRef.current) return false;
+        
+        const ROSLIB = roslibRef.current;
+        const paramClient = new ROSLIB.Service({
+            ros: rosRef.current,
+            name: "/commander_node/set_parameters",
+            serviceType: "rcl_interfaces/srv/SetParameters" 
+        });
+
+        const request = {
+            parameters: [
+                {
+                    name: "mission_strategy",
+                    value: {
+                        type: 4, // ACTION_INTRINSIC_TYPE_STRING = 4
+                        string_value: strategy
+                    }
+                }
+            ]
+        };
+
+        return new Promise((resolve) => {
+            paramClient.callService(request, (res: any) => {
+                 if (res && res.results && res.results.length > 0 && res.results[0].successful) {
+                     resolve(true);
+                 } else {
+                     resolve(false);
+                 }
+            }, () => resolve(false));
+        });
+
+      } catch (error) {
+        console.error("Failed to set strategy:", error);
+        return false;
+      }
+    },
+    []
+  );
+
+  const setInspectROI = useCallback(
+    async (x: number, y: number, z: number): Promise<boolean> => {
+        try {
+            if (!rosRef.current || !roslibRef.current) return false;
+            
+            const ROSLIB = roslibRef.current;
+            const paramClient = new ROSLIB.Service({
+                ros: rosRef.current,
+                name: "/commander_node/set_parameters",
+                serviceType: "rcl_interfaces/srv/SetParameters" 
+            });
+
+            // Wir müssen 3 Parameter setzen
+            const request = {
+                parameters: [
+                    {
+                        name: "roi_x",
+                        value: { type: 3, double_value: x }
+                    },
+                    {
+                        name: "roi_y",
+                        value: { type: 3, double_value: y }
+                    },
+                    {
+                        name: "roi_z",
+                        value: { type: 3, double_value: z }
+                    }
+                ]
+            };
+
+            return new Promise((resolve) => {
+                paramClient.callService(request, (res: any) => {
+                     // Check if all were successful
+                     if (res && res.results && res.results.every((r: any) => r.successful)) {
+                         resolve(true);
+                     } else {
+                         resolve(false);
+                     }
+                }, () => resolve(false));
+            });
+        } catch (error) {
+            console.error("Failed to set ROI:", error);
+            return false;
+        }
+    },
+    []
+  );
+
+  const setOrbitRadius = useCallback(
+    async (radius: number): Promise<boolean> => {
+        try {
+            if (!rosRef.current || !roslibRef.current) return false;
+            
+            const ROSLIB = roslibRef.current;
+            const paramClient = new ROSLIB.Service({
+                ros: rosRef.current,
+                name: "/commander_node/set_parameters",
+                serviceType: "rcl_interfaces/srv/SetParameters" 
+            });
+
+            const request = {
+                parameters: [
+                    {
+                        name: "orbit_radius",
+                        value: { type: 3, double_value: radius }
+                    }
+                ]
+            };
+
+            return new Promise((resolve) => {
+                paramClient.callService(request, (res: any) => {
+                     if (res && res.results && res.results.length > 0 && res.results[0].successful) {
+                         resolve(true);
+                     } else {
+                         resolve(false);
+                     }
+                }, () => resolve(false));
+            });
+        } catch (error) {
+            console.error("Failed to set Orbit Radius:", error);
+            return false;
+        }
+    },
+    []
+  );
+
   return {
     isConnected,
     isArmed,
@@ -416,5 +547,8 @@ export function useDrone(): UseDroneReturn {
     setMode,
     setMoveSpeed,
     executeMission,
+    setMissionStrategy,
+    setInspectROI,
+    setOrbitRadius,
   };
 }
