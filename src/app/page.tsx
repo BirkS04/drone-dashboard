@@ -19,7 +19,7 @@ export default function Home() {
   const {
     isConnected, isArmed, mode, battery, altitude, verticalSpeed,
     arm, disarm, takeoff, land, move, setMode, setMoveSpeed,
-    cameraImage, lidarData, pose
+    cameraImage, lidarData, slamPoints, pose
   } = useDrone();
 
   const { history, current: currentTelem } = useTelemetryHistory(150);
@@ -74,7 +74,7 @@ export default function Home() {
                 <FlightMap data={history} current={currentTelem} />
             </div>
 
-            {/* 3: CONTROL PAD (Mitte zentrum) - NEUER PLATZ */}
+            {/* 3: CONTROL PAD (Mitte zentrum) */}
             <div className="col-span-2 row-span-2 col-start-3 row-start-2 min-h-0">
                 <ControlPad onMove={move} disabled={!isArmed} />
             </div>
@@ -84,7 +84,7 @@ export default function Home() {
                 <Orientation3D roll={currentTelem?.roll ?? 0} pitch={currentTelem?.pitch ?? 0} yaw={currentTelem?.yaw ?? 0} />
             </div>
 
-            {/* 5: MERGED GRAPHS MIT HOVER-SWITCH (Unten zentrum) - NEUER PLATZ */}
+            {/* 5: MERGED GRAPHS MIT HOVER-SWITCH (Unten zentrum) */}
             <div className="col-span-2 row-span-2 col-start-3 row-start-4 min-h-0 relative group">
                  
                  {/* Floating Switcher (Erscheint nur bei Hover) */}
@@ -138,9 +138,13 @@ export default function Home() {
                     )}
                 </div>
                  
-                {/* LIDAR SLAM (Unten - 60% Höhe) */}
+                {/* LIDAR SLAM (Unten - 60% Höhe) - MIT FAST LIO SUPPORT */}
                 <div className="h-[60%] min-h-0">
-                     <LidarSLAMView ranges={lidarData} pose={pose} />
+                     <LidarSLAMView 
+                        ranges={lidarData} 
+                        slamPoints={slamPoints} 
+                        pose={pose} 
+                     />
                 </div>
             </div>
 
