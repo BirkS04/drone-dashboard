@@ -53,7 +53,6 @@ export function useDrone(): UseDroneReturn {
   const [verticalSpeed, setVerticalSpeed] = useState(0);
   const [cameraImage, setCameraImage] = useState<string | null>(null);
 
-  // --- SLAM STATES ---
   const [lidarData, setLidarData] = useState<number[]>([]);
   const [slamPoints, setSlamPoints] = useState<Float32Array | null>(null);
   const [pose, setPose] = useState<DronePose>({
@@ -86,15 +85,12 @@ export function useDrone(): UseDroneReturn {
     const initRos = async () => {
       const ROSLIB = await import("roslib");
       roslibRef.current = ROSLIB;
-
       const ros = new ROSLIB.Ros({ url: ROS_BRIDGE_URL });
       rosRef.current = ros;
 
       ros.on("connection", () => setIsConnected(true));
-      ros.on("error", () => setIsConnected(false));
       ros.on("close", () => setIsConnected(false));
 
-      // 1. MAVROS State & Battery
       stateTopic = new ROSLIB.Topic({ ros, name: "/mavros/state", messageType: "mavros_msgs/State" });
       stateTopic.subscribe((message: MavrosState) => {
         setIsArmed(message.armed);
@@ -104,90 +100,56 @@ export function useDrone(): UseDroneReturn {
       batteryTopic = new ROSLIB.Topic({ ros, name: "/mavros/battery", messageType: "sensor_msgs/BatteryState" });
       batteryTopic.subscribe((message: MavrosBattery) => setBattery(Math.round(message.percentage * 100)));
 
-      // 2. POSE HANDLING (Prefer Fast LIO Odometry over Mavros)
+      // POSE FROM FAST LIO
       slamPoseTopic = new ROSLIB.Topic({ ros, name: "/Odometry", messageType: "nav_msgs/Odometry" });
       slamPoseTopic.subscribe((m: any) => {
         slamActiveRef.current = true;
         const p = m.pose.pose.position;
         const o = m.pose.pose.orientation;
-        
         setPose({ x: p.x, y: p.y, z: p.z, orientation: o });
-
-        const currentTime = Date.now();
-        const dt = (currentTime - lastTimeRef.current) / 1000;
-        if (dt > 0) {
-          const vSpeed = (p.z - lastAltitudeRef.current) / dt;
-          setVerticalSpeed(Math.round(vSpeed * 100) / 100);
-        }
         setAltitude(Math.round(p.z * 100) / 100);
-        lastAltitudeRef.current = p.z;
-        lastTimeRef.current = currentTime;
       });
 
+      // FALLBACK POSE
       poseTopic = new ROSLIB.Topic({ ros, name: "/mavros/local_position/pose", messageType: "geometry_msgs/PoseStamped" });
       poseTopic.subscribe((message: MavrosLocalPosition) => {
-        if (slamActiveRef.current) return; // Skip Mavros if SLAM is providing pose
-        
-        const p = message.pose.position;
-        setPose({ x: p.x, y: p.y, z: p.z, orientation: message.pose.orientation });
-
-        const currentTime = Date.now();
-        const dt = (currentTime - lastTimeRef.current) / 1000;
-        if (dt > 0) {
-          const vSpeed = (p.z - lastAltitudeRef.current) / dt;
-          setVerticalSpeed(Math.round(vSpeed * 100) / 100);
-        }
-        setAltitude(Math.round(p.z * 100) / 100);
-        lastAltitudeRef.current = p.z;
-        lastTimeRef.current = currentTime;
+        if (slamActiveRef.current) return;
+        setPose({ x: message.pose.position.x, y: message.pose.position.y, z: message.pose.position.z, orientation: message.pose.orientation });
       });
 
-      // 3. LIDAR HANDLING (2D & 3D)
       lidarScanTopic = new ROSLIB.Topic({ ros, name: "/lidar/scan", messageType: "sensor_msgs/LaserScan" });
       lidarScanTopic.subscribe((message: any) => setLidarData(message.ranges));
 
+      // CLOUD FROM FAST LIO
       slamCloudTopic = new ROSLIB.Topic({ ros, name: "/cloud_registered", messageType: "sensor_msgs/PointCloud2" });
       let skipFrame = false;
       slamCloudTopic.subscribe((m: any) => {
-        if (skipFrame) { skipFrame = false; return; } // Throttle to 5Hz for browser performance
+        if (skipFrame) { skipFrame = false; return; }
         skipFrame = true;
         try {
           const binaryString = atob(m.data);
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-          
           const dv = new DataView(bytes.buffer);
           const numPoints = Math.floor(bytes.length / m.point_step);
-          const factor = 4; // Downsample: only every 4th point
+          const factor = 4; // Downsampling
           const points = new Float32Array(Math.floor(numPoints / factor) * 3);
-          
           for (let i = 0; i < numPoints; i += factor) {
             const offset = i * m.point_step;
-            points[(i / factor) * 3]     = dv.getFloat32(offset + 0, true); // X
-            points[(i / factor) * 3 + 1] = dv.getFloat32(offset + 4, true); // Y
-            points[(i / factor) * 3 + 2] = dv.getFloat32(offset + 8, true); // Z
+            points[(i/factor)*3] = dv.getFloat32(offset + 0, true);
+            points[(i/factor)*3 + 1] = dv.getFloat32(offset + 4, true);
+            points[(i/factor)*3 + 2] = dv.getFloat32(offset + 8, true);
           }
           setSlamPoints(points);
-        } catch (e) { console.error("PointCloud2 Parsing Error", e); }
+        } catch (e) {}
       });
 
-      // 4. CAMERA
       cameraTopic = new ROSLIB.Topic({ ros, name: "/camera/image_raw/compressed", messageType: "sensor_msgs/CompressedImage" });
       cameraTopic.subscribe((message: any) => setCameraImage(`data:image/jpeg;base64,${message.data}`));
     };
 
     initRos();
-
-    return () => {
-      stateTopic?.unsubscribe();
-      batteryTopic?.unsubscribe();
-      poseTopic?.unsubscribe();
-      slamPoseTopic?.unsubscribe();
-      cameraTopic?.unsubscribe();
-      lidarScanTopic?.unsubscribe();
-      slamCloudTopic?.unsubscribe();
-      rosRef.current?.close();
-    };
+    return () => { rosRef.current?.close(); };
   }, [parseMode]);
 
   // --- COMMAND FUNCTIONS ---
