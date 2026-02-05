@@ -17,6 +17,17 @@ interface DronePose {
   orientation: { x: number; y: number; z: number; w: number };
 }
 
+export interface Obstacle {
+    id: string;
+    type: 'box' | 'cylinder';
+    x: number;
+    y: number;
+    z: number; // Height    
+    width?: number; 
+    height?: number; 
+    radius?: number; 
+}
+
 interface UseDroneReturn {
   isConnected: boolean;
   isArmed: boolean;
@@ -38,7 +49,9 @@ interface UseDroneReturn {
   executeMission: (waypoints: { x: number; y: number; z: number }[]) => Promise<boolean>;
   setMissionStrategy: (strategy: "CASUAL" | "FACE_TARGET" | "INSPECT" | "ORBIT") => Promise<boolean>;
   setInspectROI: (x: number, y: number, z: number) => Promise<boolean>;
+  setInspectROI: (x: number, y: number, z: number) => Promise<boolean>;
   setOrbitRadius: (radius: number) => Promise<boolean>;
+  obstacles: Obstacle[];
 }
 
 export function useDrone(): UseDroneReturn {
@@ -59,6 +72,7 @@ export function useDrone(): UseDroneReturn {
     x: 0, y: 0, z: 0,
     orientation: { x: 0, y: 0, z: 0, w: 1 }
   });
+  const [obstacles, setObstacles] = useState<Obstacle[]>([]);
 
   const lastAltitudeRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(Date.now());
@@ -81,6 +95,7 @@ export function useDrone(): UseDroneReturn {
     let cameraTopic: any = null;
     let lidarScanTopic: any = null;
     let slamCloudTopic: any = null;
+    let obstaclesTopic: any = null;
 
     const initRos = async () => {
       const ROSLIB = await import("roslib");
@@ -145,7 +160,18 @@ export function useDrone(): UseDroneReturn {
       });
 
       cameraTopic = new ROSLIB.Topic({ ros, name: "/camera/image_raw/compressed", messageType: "sensor_msgs/CompressedImage" });
+      cameraTopic = new ROSLIB.Topic({ ros, name: "/camera/image_raw/compressed", messageType: "sensor_msgs/CompressedImage" });
       cameraTopic.subscribe((message: any) => setCameraImage(`data:image/jpeg;base64,${message.data}`));
+
+      obstaclesTopic = new ROSLIB.Topic({ ros, name: "/simulation/obstacles", messageType: "std_msgs/String" });
+      obstaclesTopic.subscribe((message: { data: string }) => {
+          try {
+              const parsed = JSON.parse(message.data);
+              setObstacles(parsed);
+          } catch(e) {
+              console.error("Failed to parse obstacles JSON", e);
+          }
+      });
     };
 
     initRos();
@@ -240,6 +266,6 @@ export function useDrone(): UseDroneReturn {
 
   return {
     isConnected, isArmed, mode, battery, altitude, verticalSpeed, cameraImage, lidarData, slamPoints, pose,
-    arm, disarm, takeoff, land, move, setMode, setMoveSpeed, executeMission, setMissionStrategy, setInspectROI, setOrbitRadius,
+    arm, disarm, takeoff, land, move, setMode, setMoveSpeed, executeMission, setMissionStrategy, setInspectROI, setOrbitRadius, obstacles
   };
 }

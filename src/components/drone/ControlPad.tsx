@@ -48,7 +48,7 @@ export function ControlPad({ onMove, disabled = false }: ControlPadProps) {
        // Commander move_speed (z.B. 1.0) is multiplier.
        // We pass normalised inputs (-1 to 1).
        
-       onMove(vY, vX, vZ, -vYaw); // Yaw invertieren für intuitives Steuern (Links = Links drehen)
+       onMove(vY, -vX, vZ, -vYaw); // Yaw invertieren für intuitives Steuern (Links = Links drehen)
        // Mapping:
        // Right Joystick Up (Y+) -> Forward (x+)
        // Right Joystick Right (X+) -> Right (y+)

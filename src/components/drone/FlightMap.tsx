@@ -4,7 +4,7 @@ import { TelemetryDataPoint } from "@/hooks/use-telemetry-history";
 import { Target, Navigation2, Activity, Play, Trash2, MapPin, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useDrone } from "@/hooks/use-drone";
+import { useDrone, Obstacle } from "@/hooks/use-drone";
 
 interface FlightMapProps {
   data: TelemetryDataPoint[];
@@ -17,8 +17,9 @@ interface Waypoint {
   z: number;
 }
 
+
 export function FlightMap({ data, current }: FlightMapProps) {
-  const { executeMission, setMissionStrategy, setInspectROI, setOrbitRadius } = useDrone();
+  const { executeMission, setMissionStrategy, setInspectROI, setOrbitRadius, obstacles } = useDrone();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(30); // Pixel pro Meter
@@ -31,6 +32,7 @@ export function FlightMap({ data, current }: FlightMapProps) {
   const [orbitRadius, setOrbitRadiusState] = useState<string>("");
   const [isPlanning, setIsPlanning] = useState(false);
   const [isPickingROI, setIsPickingROI] = useState(false);
+  const [hoveredInfo, setHoveredInfo] = useState<{ obs: Obstacle, x: number, y: number } | null>(null);
 
   // Helper: Screen (Pixel) -> World (Meter)
   // Standard ENU: X nach Rechts, Y nach Oben
@@ -66,6 +68,42 @@ export function FlightMap({ data, current }: FlightMapProps) {
       
       setWaypoints(prev => [...prev, { x: worldPos.x, y: worldPos.y, z: alt }]);
       setIsPlanning(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const world = toWorld(x, y, rect.width, rect.height);
+
+
+    const found = obstacles.find(obs => {
+        if (obs.type === 'box') {
+            const halfW = (obs.width || 0) / 2;
+            const halfH = (obs.height || 0) / 2;
+            return world.x >= obs.x - halfW && world.x <= obs.x + halfW &&
+                   world.y >= obs.y - halfH && world.y <= obs.y + halfH;
+        } else if (obs.type === 'cylinder') {
+            const r = obs.radius || 0;
+            const dx = world.x - obs.x;
+            const dy = world.y - obs.y;
+            return (dx*dx + dy*dy) <= r*r;
+        }
+        return false;
+    });
+
+    if (found) {
+        // Calculate screen position for tooltip (Replicating toCanvas logic)
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const screenX = centerX + found.x * zoom;
+        const screenY = centerY - found.y * zoom;
+        setHoveredInfo({ obs: found, x: screenX, y: screenY });
+    } else {
+        setHoveredInfo(null);
+    }
   };
 
   const handleStartMission = async () => {
@@ -145,6 +183,27 @@ export function FlightMap({ data, current }: FlightMapProps) {
         ctx.fill();
       }
     }
+
+    // 1.5 Render Obstacles
+    obstacles.forEach(obs => {
+        const center = toCanvas(obs.x, obs.y);
+        ctx.fillStyle = "rgba(100, 116, 139, 0.5)"; // Slate-500 with opacity
+        ctx.strokeStyle = "rgba(71, 85, 105, 0.8)"; // Slate-600
+        ctx.lineWidth = 1;
+
+        if (obs.type === 'box') {
+            const w = (obs.width || 0) * zoom;
+            const h = (obs.height || 0) * zoom;
+            ctx.fillRect(center.x - w/2, center.y - h/2, w, h);
+            ctx.strokeRect(center.x - w/2, center.y - h/2, w, h);
+        } else if (obs.type === 'cylinder') {
+            const r = (obs.radius || 0) * zoom;
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+    });
 
     // 2. Home Position
     const homePos = toCanvas(0, 0);
@@ -257,7 +316,7 @@ export function FlightMap({ data, current }: FlightMapProps) {
         ctx.restore();
     }
 
-  }, [data, current, zoom, waypoints, missionStrategy, roi, isPickingROI]);
+  }, [data, current, zoom, waypoints, missionStrategy, roi, isPickingROI, hoveredInfo, obstacles]);
 
   return (
     <Card className="shadow-sm border-slate-200 dark:border-slate-800 h-full flex flex-col overflow-hidden bg-white dark:bg-slate-950 min-h-[300px] relative select-none">
@@ -370,10 +429,24 @@ export function FlightMap({ data, current }: FlightMapProps) {
       )}
 
       {/* Map Area */}
-      <div className="flex-1 relative w-full h-full bg-slate-50/50 cursor-crosshair group" ref={containerRef} onClick={handleMapClick}>
+      <div className="flex-1 relative w-full h-full bg-slate-50/50 cursor-crosshair group" ref={containerRef} onClick={handleMapClick} onMouseMove={handleMouseMove} onMouseLeave={() => setHoveredInfo(null)}>
         <canvas ref={canvasRef} className="absolute inset-0 touch-none" />
         
         {/* Hover Hint */}
+        {/* Hover Hint */}
+        {hoveredInfo && (
+            <div 
+                className="absolute z-30 pointer-events-none bg-slate-900/80 text-white text-[10px] px-2 py-1 rounded shadow-lg backdrop-blur-sm"
+                style={{ 
+                    left: `${hoveredInfo.x}px`, 
+                    top: `${hoveredInfo.y - 20}px`,
+                    transform: 'translate(-50%, -100%)'
+                }}
+            >
+                <div className="font-bold">{hoveredInfo.obs.id}</div>
+                <div>Height: {hoveredInfo.obs.z}m</div>
+            </div>
+        )}
         {!isPlanning && (
             <div className="absolute bottom-4 right-1/2 translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 <div className="bg-slate-900/70 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] text-white font-medium shadow-md">
