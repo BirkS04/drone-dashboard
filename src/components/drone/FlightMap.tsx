@@ -34,23 +34,35 @@ export function FlightMap({ data, current }: FlightMapProps) {
   const [isPickingROI, setIsPickingROI] = useState(false);
   const [hoveredInfo, setHoveredInfo] = useState<{ obs: Obstacle, x: number, y: number } | null>(null);
 
+  // Navigation State
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number, y: number } | null>(null);
+  const hasDraggedRef = useRef(false);
+
+  // Helper: Screen (Pixel) -> World (Meter)
+  // Standard ENU: X nach Rechts, Y nach Oben
   // Helper: Screen (Pixel) -> World (Meter)
   // Standard ENU: X nach Rechts, Y nach Oben
   const toWorld = useCallback((screenX: number, screenY: number, width: number, height: number): {x: number, y: number} => {
      const centerX = width / 2;
      const centerY = height / 2;
      
+     // Adjust for Pan
+     const effectiveCenterX = centerX + panOffset.x;
+     const effectiveCenterY = centerY + panOffset.y;
+     
      // x_world = (screen_x - center_x) / zoom
-     const x_world = (screenX - centerX) / zoom;
+     const x_world = (screenX - effectiveCenterX) / zoom;
      
      // y_world = (center_y - screen_y) / zoom  (Weil Screen Y nach unten positiv ist)
-     const y_world = (centerY - screenY) / zoom;
+     const y_world = (effectiveCenterY - screenY) / zoom;
      
      return { x: x_world, y: y_world };
-  }, [zoom]);
+  }, [zoom, panOffset]);
 
   const handleMapClick = (e: React.MouseEvent) => {
-      if (!containerRef.current) return;
+      if (!containerRef.current || hasDraggedRef.current) return;
       
       const rect = containerRef.current.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -70,14 +82,34 @@ export function FlightMap({ data, current }: FlightMapProps) {
       setIsPlanning(true);
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setHoveredInfo(null);
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    hasDraggedRef.current = false;
+    setIsDragging(true);
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && dragStartRef.current) {
+        const dx = e.clientX - dragStartRef.current.x;
+        const dy = e.clientY - dragStartRef.current.y;
+        
+        if (dx*dx + dy*dy > 25) { // 5px threshold squared
+             hasDraggedRef.current = true;
+        }
+
+        setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        return;
+    }
+
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
+    // Quick and dirty hover check using transformed coords
     const world = toWorld(x, y, rect.width, rect.height);
-
 
     const found = obstacles.find(obs => {
         if (obs.type === 'box') {
@@ -95,15 +127,22 @@ export function FlightMap({ data, current }: FlightMapProps) {
     });
 
     if (found) {
-        // Calculate screen position for tooltip (Replicating toCanvas logic)
+        // Calculate screen position for tooltip 
+        // We replicate toCanvas logic inline or just use the updated toCanvas logic if we move it out or use toWorld inverse
         const centerX = rect.width / 2;
         const centerY = rect.height / 2;
-        const screenX = centerX + found.x * zoom;
-        const screenY = centerY - found.y * zoom;
+        // x_screen = center + pan + world * zoom
+        const screenX = centerX + panOffset.x + found.x * zoom;
+        const screenY = centerY + panOffset.y - found.y * zoom; // Y up is negative screen delta
         setHoveredInfo({ obs: found, x: screenX, y: screenY });
     } else {
         setHoveredInfo(null);
     }
+  };
+
+  const handleMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
   };
 
   const handleStartMission = async () => {
@@ -149,8 +188,8 @@ export function FlightMap({ data, current }: FlightMapProps) {
 
     // MAPPER: World X -> Canvas X (Right), World Y -> Canvas Y (Up is negative)
     const toCanvas = (x: number, y: number) => ({
-      x: centerX + x * zoom,
-      y: centerY - y * zoom
+      x: centerX + panOffset.x + x * zoom,
+      y: centerY + panOffset.y - y * zoom
     });
 
     // 1. Clear & Background
@@ -161,8 +200,9 @@ export function FlightMap({ data, current }: FlightMapProps) {
     ctx.lineWidth = 1;
     
     // Achsen (Ursprung)
-    ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(rect.width, centerY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, rect.height); ctx.stroke();
+    const origin = toCanvas(0,0);
+    ctx.beginPath(); ctx.moveTo(0, origin.y); ctx.lineTo(rect.width, origin.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, rect.height); ctx.stroke();
 
     // Achsen Beschriftung
     ctx.font = "10px monospace";
@@ -173,8 +213,8 @@ export function FlightMap({ data, current }: FlightMapProps) {
     // Rasterpunkte (1 Meter Raster)
     const dotSpacing = zoom; 
     ctx.fillStyle = "rgba(148, 163, 184, 0.3)";
-    const startX = centerX % dotSpacing;
-    const startY = centerY % dotSpacing;
+    const startX = (centerX + panOffset.x) % dotSpacing;
+    const startY = (centerY + panOffset.y) % dotSpacing;
 
     for (let x = startX; x < rect.width; x += dotSpacing) {
       for (let y = startY; y < rect.height; y += dotSpacing) {
@@ -316,7 +356,7 @@ export function FlightMap({ data, current }: FlightMapProps) {
         ctx.restore();
     }
 
-  }, [data, current, zoom, waypoints, missionStrategy, roi, isPickingROI, hoveredInfo, obstacles]);
+  }, [data, current, zoom, waypoints, missionStrategy, roi, isPickingROI, hoveredInfo, obstacles, panOffset]);
 
   return (
     <Card className="shadow-sm border-slate-200 dark:border-slate-800 h-full flex flex-col overflow-hidden bg-white dark:bg-slate-950 min-h-[300px] relative select-none">
@@ -343,11 +383,11 @@ export function FlightMap({ data, current }: FlightMapProps) {
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(prev => Math.min(prev + 10, 150))}>
           <Plus className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(prev => Math.max(prev - 10, 5))}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(prev => Math.max(prev - (prev > 20 ? 10 : 5), 1))}>
           <Minus className="h-4 w-4" />
         </Button>
         <div className="h-px w-full bg-slate-200 my-0.5" />
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(30)}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setZoom(30); setPanOffset({x:0, y:0}); }}>
           <Target className="h-4 w-4" />
         </Button>
       </div>
@@ -429,7 +469,15 @@ export function FlightMap({ data, current }: FlightMapProps) {
       )}
 
       {/* Map Area */}
-      <div className="flex-1 relative w-full h-full bg-slate-50/50 cursor-crosshair group" ref={containerRef} onClick={handleMapClick} onMouseMove={handleMouseMove} onMouseLeave={() => setHoveredInfo(null)}>
+      <div 
+        className={`flex-1 relative w-full h-full bg-slate-50/50 group ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} 
+        ref={containerRef} 
+        onClick={handleMapClick} 
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove} 
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => { setHoveredInfo(null); handleMouseUp(); }}
+      >
         <canvas ref={canvasRef} className="absolute inset-0 touch-none" />
         
         {/* Hover Hint */}
