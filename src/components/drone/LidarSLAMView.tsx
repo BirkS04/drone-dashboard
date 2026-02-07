@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useRef, useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Grid } from "@react-three/drei";
 import * as THREE from "three";
 import { Button } from "@/components/ui/button";
 import { Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { useDrone } from "@/hooks/use-drone";
 
 interface LidarSLAMViewProps {
   ranges?: number[];
@@ -18,20 +19,23 @@ interface LidarSLAMViewProps {
 }
 
 export function LidarSLAMView({ ranges, slamPoints, pose }: LidarSLAMViewProps) {
+  const { obstacles } = useDrone();
   const [pointBuffer, setPointBuffer] = useState<number[]>([]);
-  const MAX_POINTS = 80000;
+  
+  // Wieder reduziert auf 80k Punkte für bessere Performance
+  const MAX_POINTS = 80000; 
 
-  // 1. FAST LIO (Punkte kommen bereits in Weltkoordinaten)
+  // 1. FAST LIO Logic (Punkte sammeln)
   useEffect(() => {
     if (!slamPoints || slamPoints.length === 0) return;
     setPointBuffer(prev => {
       const newPoints = Array.from(slamPoints);
       const combined = [...prev, ...newPoints];
-      return combined.length > MAX_POINTS * 3 ? combined.slice(newPoints.length) : combined;
+      return combined.length > MAX_POINTS * 3 ? combined.slice(-MAX_POINTS * 3) : combined;
     });
   }, [slamPoints]);
 
-  // 2. 2D LIDAR FALLBACK (Muss im Frontend gedreht werden)
+  // 2. 2D LIDAR Fallback
   useEffect(() => {
     if (!ranges || ranges.length === 0 || slamPoints) return;
     const angleStep = (Math.PI * 2) / ranges.length;
@@ -64,19 +68,56 @@ export function LidarSLAMView({ ranges, slamPoints, pose }: LidarSLAMViewProps) 
       <Canvas>
         <PerspectiveCamera makeDefault position={[12, 12, 12]} up={[0, 0, 1]} />
         <OrbitControls makeDefault />
+        {/* Der Grid liegt flach auf der Map-Ebene */}
         <Grid infiniteGrid rotation={[Math.PI / 2, 0, 0]} sectionColor="#1e293b" cellColor="#0f172a" />
-        <points>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[floatArray, 3]} count={floatArray.length / 3} array={floatArray} itemSize={3} />
-          </bufferGeometry>
-          <pointsMaterial size={0.06} color={slamPoints ? "#4ade80" : "#3b82f6"} sizeAttenuation={true} transparent opacity={0.6} />
-        </points>
-        <group position={[pose.x, pose.y, pose.z]}>
-          <mesh quaternion={[pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]}>
-            <boxGeometry args={[0.4, 0.4, 0.1]} />
-            <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.2} />
-          </mesh>
+        
+        {/* 
+            GRUPPE 1: LIO-DATEN (Punkte und Drohne)
+            Diese Gruppe wird um 90 Grad (1.5708) gedreht, damit sie zur Map passt.
+        */}
+        <group rotation={[0, 0, 1.5708]}>
+          <points>
+            <bufferGeometry>
+              <bufferAttribute attach="attributes-position" args={[floatArray, 3]} count={floatArray.length / 3} array={floatArray} itemSize={3} />
+            </bufferGeometry>
+            <pointsMaterial size={0.06} color={slamPoints ? "#4ade80" : "#3b82f6"} sizeAttenuation={true} transparent opacity={0.6} />
+          </points>
+
+          {/* Die Drohne innerhalb der LIO-Rotation */}
+          <group position={[pose.x, pose.y, pose.z]}>
+            <mesh quaternion={[pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]}>
+              <boxGeometry args={[0.4, 0.4, 0.1]} />
+              <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.2} />
+            </mesh>
+            <axesHelper args={[1]} />
+          </group>
         </group>
+
+        {/* 
+            GRUPPE 2: HINDERNISSE (Map Frame)
+            Diese bleiben UNVERÄNDERT, da sie bereits in Weltkoordinaten kommen.
+        */}
+        {obstacles.map((obs, idx) => (
+            <group key={idx} position={[obs.x, obs.y, obs.z]} rotation={[0, 0, obs.yaw || 0]}>
+                {obs.type === 'box' && (
+                    <mesh>
+                        <boxGeometry args={[obs.width || 1, obs.height || 1, obs.depth || 1]} />
+                        <meshStandardMaterial color="red" transparent opacity={0.2} />
+                        <lineSegments>
+                            <edgesGeometry args={[new THREE.BoxGeometry(obs.width || 1, obs.height || 1, obs.depth || 1)]} />
+                            <lineBasicMaterial color="red" transparent opacity={0.5} />
+                        </lineSegments>
+                    </mesh>
+                )}
+                {obs.type === 'cylinder' && (
+                    <mesh rotation={[Math.PI / 2, 0, 0]}>
+                        <cylinderGeometry args={[obs.radius, obs.radius, obs.depth || 1, 32]} />
+                        <meshStandardMaterial color="red" transparent opacity={0.2} />
+                    </mesh>
+                )}
+            </group>
+        ))}
+
         <ambientLight intensity={1.5} />
       </Canvas>
     </Card>
