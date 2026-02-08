@@ -1,10 +1,11 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { TelemetryDataPoint } from "@/hooks/use-telemetry-history";
-import { Target, Navigation2, Activity, Play, Trash2, MapPin, Plus, Minus } from "lucide-react";
+import { Target, Navigation2, Activity, Play, Trash2, MapPin, Plus, Minus, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDrone, Obstacle } from "@/hooks/use-drone";
+import { generateObstacleCourse } from "@/lib/missions/obstacle-course";
 
 interface FlightMapProps {
   data: TelemetryDataPoint[];
@@ -19,7 +20,18 @@ interface Waypoint {
 
 
 export function FlightMap({ data, current }: FlightMapProps) {
-  const { executeMission, setMissionStrategy, setInspectROI, setOrbitRadius, obstacles } = useDrone();
+  const { 
+    executeMission, 
+    setMissionStrategy, 
+    setInspectROI, 
+    setOrbitRadius, 
+    obstacles,
+    isArmed,
+    mode,
+    arm,
+    takeoff,
+    setMode
+  } = useDrone();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(30); // Pixel pro Meter
@@ -160,6 +172,48 @@ export function FlightMap({ data, current }: FlightMapProps) {
 
       await setMissionStrategy(missionStrategy);
       await executeMission(waypoints);
+  };
+
+  const handleStartObstacleMission = async () => {
+    // 1. Generate Waypoints based on obstacles
+    const generatedWaypoints = generateObstacleCourse(obstacles);
+    if (generatedWaypoints.length === 0) return;
+
+    // Show them on map for visual feedback (optional, but good)
+    setWaypoints(generatedWaypoints);
+    setIsPlanning(true);
+
+    // 2. Smart Start Sequence
+    // Check if we need to takeoff first
+    if (!isArmed || mode !== "GUIDED") {
+        console.log("Smart Start: Switching to GUIDED...");
+        await setMode("GUIDED");
+        
+        if (!isArmed) {
+            console.log("Smart Start: Arming...");
+            const armed = await arm();
+            if (!armed) {
+                console.error("Failed to arm");
+                return;
+            }
+            
+            // Wait a bit for arming to propagate
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Takeoff if on ground (checking altitude < 1m as rough heuristic, or just sending command)
+        if ((current?.ax || 0) < 0.5) {
+             console.log("Smart Start: Taking off...");
+             await takeoff(5);
+             // Wait for takeoff? Ideally we monitor altitude, but for now a fixed delay
+             await new Promise(r => setTimeout(r, 5000));
+        }
+    }
+
+    // 3. Execute
+    console.log("Smart Start: Executing Mission...");
+    await setMissionStrategy("CASUAL"); // Or a specific strategy for obstacles?
+    await executeMission(generatedWaypoints);
   };
 
   const handleClear = () => {
@@ -391,6 +445,20 @@ export function FlightMap({ data, current }: FlightMapProps) {
           <Target className="h-4 w-4" />
         </Button>
       </div>
+
+      {/* OBSTACLE MISSION BUTTON */}
+      {obstacles.length > 0 && (
+        <div className="absolute top-20 right-4 z-10 pointer-events-auto">
+             <Button 
+                size="sm" 
+                className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg backdrop-blur-md border border-purple-500/50"
+                onClick={handleStartObstacleMission}
+            >
+                <Zap className="w-3.5 h-3.5 mr-1.5" />
+                Obstacle Run
+             </Button>
+        </div>
+      )}
 
       {/* Mission Planner UI */}
       {isPlanning && (
