@@ -481,6 +481,7 @@ export function FlightMap({ data, current }: FlightMapProps) {
                             <option value="CASUAL">Casual</option>
                             <option value="INSPECT">Inspect</option>
                             <option value="ORBIT">Orbit</option>
+                            <option value="GOAL">Nav Goal (RViz)</option>
                         </select>
                      </div>
                      <div className="col-span-1">

@@ -47,8 +47,7 @@ interface UseDroneReturn {
   setMode: (mode: DroneMode) => Promise<boolean>;
   setMoveSpeed: (speed: number) => Promise<boolean>;
   executeMission: (waypoints: { x: number; y: number; z: number }[]) => Promise<boolean>;
-  setMissionStrategy: (strategy: "CASUAL" | "FACE_TARGET" | "INSPECT" | "ORBIT") => Promise<boolean>;
-  setInspectROI: (x: number, y: number, z: number) => Promise<boolean>;
+  setMissionStrategy: (strategy: "CASUAL" | "FACE_TARGET" | "INSPECT" | "ORBIT" | "GOAL") => Promise<boolean>;
   setInspectROI: (x: number, y: number, z: number) => Promise<boolean>;
   setOrbitRadius: (radius: number) => Promise<boolean>;
   obstacles: Obstacle[];
